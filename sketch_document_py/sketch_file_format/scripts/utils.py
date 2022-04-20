@@ -163,16 +163,19 @@ class DataClassBuilder:
             ctx=ast.Load()
         )
 
-    def create_union(self, nodes: List[ast.AST]) -> ast.Subscript:
+    def create_union(self, nodes: List[ast.AST]) -> ast.AST:
         """
         Create a union from a list of nodes.
         """
-        self.check_typing_import('Union')
-        return ast.Subscript(
-            value=ast.Name(id='Union', ctx=ast.Load()),
-            slice=ast.Tuple(elts=nodes),
-            ctx=ast.Load()
-        )
+        if len(nodes) > 1:
+            self.check_typing_import('Union')
+            return ast.Subscript(
+                value=ast.Name(id='Union', ctx=ast.Load()),
+                slice=ast.Tuple(elts=nodes),
+                ctx=ast.Load()
+            )
+        else:
+            return nodes[0]
 
     def create_optional(self, node: ast.AST) -> ast.Subscript:
         """
@@ -196,18 +199,19 @@ class DataClassBuilder:
             ctx=ast.Load()
         )
 
-    def create_dict(self, key: str, value: str) -> ast.Subscript:
+    def create_dict(self, key: str, value: ast.AST) -> ast.Subscript:
         """
         Create a dict from key and value.
         """
         self.check_typing_import('Dict')
         self.check_typing_import(key)
-        self.check_typing_import(value)
+        if isinstance(value, ast.Name):
+            self.check_typing_import(value.id)
         return ast.Subscript(
             value=ast.Name(id='Dict', ctx=ast.Load()),
             slice=ast.Tuple(elts=[
                 ast.Name(id=key, ctx=ast.Load()),
-                ast.Name(id=value, ctx=ast.Load())
+                value
             ]),
             ctx=ast.Load()
         )
@@ -232,12 +236,13 @@ class DataClassBuilder:
             self,
             identifier: str,
             schema: Dict[str, Any],
-            is_top_level: bool = False
+            is_top_level: bool
     ) -> Optional[Union[
         ast.Subscript,
         ast.Name,
         ast.ClassDef,
-        ast.Constant
+        ast.Constant,
+        ast.AST
     ]]:
         schema_type = schema.get('type')
         if schema_type == 'string':
@@ -250,7 +255,7 @@ class DataClassBuilder:
                 '''
                 since python does not float Literals, ignore enum case
                 '''
-                return None
+                raise Exception('enum not supported for number')
             else:
                 return ast.Name(id='float', ctx=ast.Load())
         elif schema_type == 'integer':
@@ -268,9 +273,9 @@ class DataClassBuilder:
         elif schema_type == 'object':
             if type(schema.get('properties')) is dict:
                 required = schema.get('required', [])
-                additional_props = schema['additionalProperties'] is True
+                additional_props = schema.get('additionalProperties') is True
                 if additional_props:
-                    return self.create_dict('str', 'Any')
+                    return self.create_dict('str', ast.Name(id='Any', ctx=ast.Load()))
                 else:
                     properties = schema.get('properties', {})
                     properties = dict(sorted(properties.items(),
@@ -334,7 +339,11 @@ class DataClassBuilder:
                         self.class_dict[new_identifier] = (schema, class_def)
                         return ast.Constant(value=new_identifier)
             elif type(schema.get('patternProperties')) is dict:
-                return self.create_dict('str', 'Any')
+                ast_nodes = [
+                    self.schema_to_ast_node(pattern_key, pattern_schema, False)
+                    for pattern_key, pattern_schema in schema.get('patternProperties').items()
+                ]
+                return self.create_dict('str', self.create_union(ast_nodes))
             else:
                 return self.create_any()
         elif schema_type == 'array':
@@ -357,7 +366,10 @@ class DataClassBuilder:
                 else:
                     raise Exception(f'Unsupported const value ${schema["const"]}')
             elif schema.get('$ref') is not None:
-                return ast.Constant(value=extract_ref(schema['$ref']))
+                if is_top_level:
+                    return ast.Name(id=extract_ref(schema['$ref']), ctx=ast.Load())
+                else:
+                    return ast.Constant(value=extract_ref(schema['$ref']))
             elif schema.get('oneOf') is not None:
                 return self.create_union([
                     self.schema_to_ast_node(f'OneOf${identifier}', item, False)
@@ -366,7 +378,7 @@ class DataClassBuilder:
             else:
                 return self.create_any()
 
-    def add_schema_to_top_level_declaration(self, schema: Dict[str, Any]):
+    def add_schema_to_top_level_declaration(self, schema: Dict[str, Any]) -> Union[ast.ClassDef, ast.Assign]:
         identifier = extract_id(schema['$id'] if '$id' in schema else 'Unknown')
         if schema.get('enum') is not None and schema.get('enumDescriptions') is not None:
             self.check_enum_import()
@@ -382,7 +394,7 @@ class DataClassBuilder:
                 zip(schema['enumDescriptions'], schema['enum']),
                 {}
             )
-            self.class_dict[identifier] = (schema, ast.ClassDef(
+            class_def = ast.ClassDef(
                 name=identifier,
                 bases=[ast.Name(id='Enum', ctx=ast.Load())],
                 keywords=[],
@@ -396,17 +408,22 @@ class DataClassBuilder:
                     for name, value in enum_pairs.items()
                 ],
                 decorator_list=[]
-            ))
+            )
+            self.class_dict[identifier] = (schema, class_def)
+            return class_def
         else:
             definition = self.schema_to_ast_node(identifier, schema, True)
             if type(definition) is ast.ClassDef:
                 self.class_dict[identifier] = (schema, definition)
+                return definition
             elif definition is not None:
-                self.class_dict[identifier] = (schema, ast.Assign(
+                assign = ast.Assign(
                     targets=[ast.Name(id=identifier, ctx=ast.Store())],
                     value=definition,
                     lineno=0
-                ))
+                )
+                self.class_dict[identifier] = (schema, assign)
+                return assign
 
     def build(
             self,

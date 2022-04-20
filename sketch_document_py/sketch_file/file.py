@@ -11,7 +11,7 @@ from functools import reduce
 from typing import Dict, List
 from uuid import UUID
 
-from file_format_py import Contents, Document_, Meta, Page, User, Workspace, FileRef
+from sketch_document_py.sketch_file_format import Contents, Document_, Meta, Page, User, Workspace, FileRef
 
 
 @dataclass

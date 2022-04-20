@@ -1,2 +1,5 @@
 .idea
-file_format_py/types.py
+*/**/.pytest_cache
+*/**/.mypy_cache
+dist
+sketch_document_py/sketch_file_format/types.py

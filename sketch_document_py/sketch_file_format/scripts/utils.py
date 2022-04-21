@@ -33,11 +33,13 @@ def is_object_schema(schema: Dict[str, Any]) -> bool:
     return schema.get('properties') is not None and '_class' in schema['properties']
 
 
-def generate_field_name(key: str, other_fields: Iterable[str] = ()) -> str:
+def generate_field_name(key: str, other_fields: Iterable[str] = (), default: str = 'unnamed') -> str:
     """
     Generate a field name from a key.
     """
-    new_key = key
+    new_key = re.sub(r'\W', '', key)
+    if len(new_key) == 0:
+        new_key = default
     while new_key.startswith('_'):
         new_key = new_key[1:]
     while new_key in [*other_fields, *kwlist]:
@@ -223,11 +225,13 @@ class DataClassBuilder:
         self.check_typing_import('Any')
         return ast.Name(id='Any', ctx=ast.Load())
 
-    def generate_class_name_from_key(self, key: str) -> str:
+    def generate_class_name_from_key(self, key: str, default: str = 'Unnamed') -> str:
         """
         Generate a class name from a key.
         """
-        class_key = key[0].upper() + key[1:]
+        class_key = re.sub(r'\W', '', key[0].upper() + key[1:])
+        if len(class_key) == 0:
+            class_key = default
         while class_key in self.class_dict:
             class_key += '_'
         return class_key
@@ -273,8 +277,8 @@ class DataClassBuilder:
         elif schema_type == 'object':
             if type(schema.get('properties')) is dict:
                 required = schema.get('required', [])
-                additional_props = schema.get('additionalProperties') is True
-                if additional_props:
+                additional_props = schema.get('additionalProperties')
+                if isinstance(additional_props, dict) or additional_props is True:
                     return self.create_dict('str', ast.Name(id='Any', ctx=ast.Load()))
                 else:
                     properties = schema.get('properties', {})
@@ -284,7 +288,7 @@ class DataClassBuilder:
                     elements = []
                     for key, value in properties.items():
                         annotation = self.schema_to_ast_node(
-                            key,
+                            f'{identifier}{key[0].upper()}{key[1:]}',
                             value,
                             False
                         )
@@ -340,7 +344,9 @@ class DataClassBuilder:
                         return ast.Constant(value=new_identifier)
             elif type(schema.get('patternProperties')) is dict:
                 ast_nodes = [
-                    self.schema_to_ast_node(pattern_key, pattern_schema, False)
+                    self.schema_to_ast_node(
+                        self.generate_class_name_from_key(pattern_key, f'{identifier}Value'),
+                        pattern_schema, False)
                     for pattern_key, pattern_schema in schema.get('patternProperties').items()
                 ]
                 return self.create_dict('str', self.create_union(ast_nodes))
@@ -349,7 +355,7 @@ class DataClassBuilder:
         elif schema_type == 'array':
             if type(schema.get('items')) is dict:
                 return self.create_list(self.schema_to_ast_node(
-                    identifier,
+                    f'{identifier}Item',
                     schema['items'],
                     False
                 ))
@@ -409,12 +415,12 @@ class DataClassBuilder:
                 ],
                 decorator_list=[]
             )
-            self.class_dict[identifier] = (schema, class_def)
+            self.class_dict[self.generate_class_name_from_key(identifier)] = (schema, class_def)
             return class_def
         else:
             definition = self.schema_to_ast_node(identifier, schema, True)
             if type(definition) is ast.ClassDef:
-                self.class_dict[identifier] = (schema, definition)
+                self.class_dict[self.generate_class_name_from_key(identifier)] = (schema, definition)
                 return definition
             elif definition is not None:
                 assign = ast.Assign(
@@ -422,7 +428,7 @@ class DataClassBuilder:
                     value=definition,
                     lineno=0
                 )
-                self.class_dict[identifier] = (schema, assign)
+                self.class_dict[self.generate_class_name_from_key(identifier)] = (schema, assign)
                 return assign
 
     def build(

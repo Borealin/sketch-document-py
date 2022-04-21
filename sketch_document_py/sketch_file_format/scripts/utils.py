@@ -11,9 +11,12 @@ def is_layer_schema(schema: Dict[str, Any]) -> bool:
     Use the presence of `do_objectID` and `frame` properties as a heuristic to
     identify a schema that represents a layer.
     """
-    has_frame = schema.get('properties') is not None and type(schema.get('properties').get('frame')) is dict
-    has_id = schema.get('properties') is not None and type(schema['properties'].get('do_objectID')) is dict
-    return has_frame and has_id
+    properties = schema.get('properties')
+    if properties is not None and isinstance(properties, dict):
+        has_frame = isinstance(properties.get('frame'), dict)
+        has_id = isinstance(properties.get('do_objectID'), dict)
+        return has_frame and has_id
+    return False
 
 
 def is_group_schema(schema: Dict[str, Any]) -> bool:
@@ -22,8 +25,11 @@ def is_group_schema(schema: Dict[str, Any]) -> bool:
     identify a schema that represents a group.
     """
     is_layer = is_layer_schema(schema)
-    has_layers = schema.get('properties') is not None and type(schema['properties'].get('layers')) is dict
-    return is_layer and has_layers
+    properties = schema.get('properties')
+    if properties is not None and isinstance(properties, dict):
+        has_layers = isinstance(properties.get('layers'), dict)
+        return is_layer and has_layers
+    return False
 
 
 def is_object_schema(schema: Dict[str, Any]) -> bool:
@@ -176,8 +182,10 @@ class DataClassBuilder:
                 slice=ast.Tuple(elts=nodes),
                 ctx=ast.Load()
             )
-        else:
+        elif len(nodes) == 1:
             return nodes[0]
+        else:
+            return self.create_any()
 
     def create_optional(self, node: ast.AST) -> ast.Subscript:
         """
@@ -241,13 +249,7 @@ class DataClassBuilder:
             identifier: str,
             schema: Dict[str, Any],
             is_top_level: bool
-    ) -> Optional[Union[
-        ast.Subscript,
-        ast.Name,
-        ast.ClassDef,
-        ast.Constant,
-        ast.AST
-    ]]:
+    ) -> ast.AST:
         schema_type = schema.get('type')
         if schema_type == 'string':
             if schema.get('enum') is not None:
@@ -275,18 +277,20 @@ class DataClassBuilder:
         elif schema_type == 'null':
             return self.create_literal(None)
         elif schema_type == 'object':
-            if type(schema.get('properties')) is dict:
+            properties = schema.get('properties')
+            pattern_properties = schema.get('patternProperties')
+            if isinstance(properties, dict):
                 required = schema.get('required', [])
                 additional_props = schema.get('additionalProperties')
                 if isinstance(additional_props, dict) or additional_props is True:
                     return self.create_dict('str', ast.Name(id='Any', ctx=ast.Load()))
                 else:
-                    properties = schema.get('properties', {})
-                    properties = dict(sorted(properties.items(),
-                                             key=lambda item: required.index(item[0]) if item[0] in required else len(
-                                                 required)))
-                    elements = []
-                    for key, value in properties.items():
+                    sorted_properties = dict(sorted(properties.items(),
+                                                    key=lambda item: required.index(item[0]) if item[
+                                                                                                    0] in required else len(
+                                                        required)))
+                    elements: List[ast.AnnAssign] = []
+                    for key, value in sorted_properties.items():
                         annotation = self.schema_to_ast_node(
                             f'{identifier}{key[0].upper()}{key[1:]}',
                             value,
@@ -342,18 +346,18 @@ class DataClassBuilder:
                     else:
                         self.class_dict[new_identifier] = (schema, class_def)
                         return ast.Constant(value=new_identifier)
-            elif type(schema.get('patternProperties')) is dict:
+            elif isinstance(pattern_properties, dict):
                 ast_nodes = [
                     self.schema_to_ast_node(
                         self.generate_class_name_from_key(pattern_key, f'{identifier}Value'),
                         pattern_schema, False)
-                    for pattern_key, pattern_schema in schema.get('patternProperties').items()
+                    for pattern_key, pattern_schema in pattern_properties.items()
                 ]
                 return self.create_dict('str', self.create_union(ast_nodes))
             else:
                 return self.create_any()
         elif schema_type == 'array':
-            if type(schema.get('items')) is dict:
+            if isinstance(schema.get('items'), dict):
                 return self.create_list(self.schema_to_ast_node(
                     f'{identifier}Item',
                     schema['items'],
@@ -363,11 +367,11 @@ class DataClassBuilder:
                 return self.create_list(self.create_any())
         else:
             if schema.get('const') is not None:
-                if type(schema['const']) is str:
+                if isinstance(schema['const'], str):
                     return self.create_literal(schema['const'])
-                elif type(schema['const']) is int:
+                elif isinstance(schema['const'], int):
                     return self.create_literal(schema['const'])
-                elif type(schema['const']) is float:
+                elif isinstance(schema['const'], float):
                     return self.create_literal(schema['const'])
                 else:
                     raise Exception(f'Unsupported const value ${schema["const"]}')
@@ -395,7 +399,7 @@ class DataClassBuilder:
                     (generate_field_name(re.sub(r'\W', '', pascalize(item[0])), acc.keys())): item[1]
                 }
 
-            enum_pairs = reduce(
+            enum_pairs: Dict[str, str] = reduce(
                 enum_pair_reducer,
                 zip(schema['enumDescriptions'], schema['enum']),
                 {}
@@ -432,7 +436,7 @@ def _missing_(cls, value):
             return class_def
         else:
             definition = self.schema_to_ast_node(identifier, schema, True)
-            if type(definition) is ast.ClassDef:
+            if isinstance(definition, ast.ClassDef):
                 self.class_dict[self.generate_class_name_from_key(identifier)] = (schema, definition)
                 return definition
             elif definition is not None:

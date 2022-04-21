@@ -93,7 +93,9 @@ def get_schemas(version: str) -> Schemas:
         meta_schema_json = require('./meta.schema.json')
         page_schema_json = require('./page.schema.json')
         user_schema_json = require('./user.schema.json')
-        versions = tuple(meta_schema_json['properties']['version']['enum'])
+        versions = meta_schema_json.get('properties').get('version').get('enum')
+        if versions is None:
+            versions = ()
         return Schemas(
             version=0 if len(versions) == 0 else versions[-1],
             versions=versions,

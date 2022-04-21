@@ -1,8 +1,8 @@
 import ast
 from typing import Any, Dict, Optional
 
-from schema_fetcher import get_schemas, Schemas
-from utils import is_layer_schema, is_group_schema, is_object_schema, DataClassBuilder, extract_id, \
+from .schema_fetcher import get_schemas, Schemas
+from .utils import is_layer_schema, is_group_schema, is_object_schema, DataClassBuilder, extract_id, \
     parse_lambda_function, parse_def_function, parse_function_call
 import sys
 
@@ -76,7 +76,7 @@ def generate(path: str, schemas: Schemas):
         "enumDescriptions": all_classes
     }
 
-    all_definitions = {
+    all_definitions: Dict[str, Any] = {
         **definitions,
         'Contents': contents,
         'Document': document,
@@ -89,7 +89,7 @@ def generate(path: str, schemas: Schemas):
     for definition in all_definitions.values():
         data_class_builder.add_schema_to_top_level_declaration(definition)
 
-    def build_class_map() -> ast.Assign:
+    def build_class_map() -> ast.AnnAssign:
         class_map = {}
         for sketch_class in all_classes:
             for schema in definitions.values():
@@ -98,10 +98,19 @@ def generate(path: str, schemas: Schemas):
                 if type(klass) is dict and 'const' in klass and klass['const'] == sketch_class and type(schema) is dict:
                     class_map[sketch_class] = extract_id(schema['$id'])
                     break
-        return ast.Assign(
-            targets=[
-                ast.Name(id='class_map', ctx=ast.Store())
-            ],
+        return ast.AnnAssign(
+            target=ast.Name(id='class_map', ctx=ast.Store()),
+            annotation=ast.Subscript(
+                value=ast.Name(id='Dict', ctx=ast.Load()),
+                slice=ast.Tuple(elts=[
+                    ast.Name(id='str', ctx=ast.Load()),
+                    ast.Subscript(
+                        value=ast.Name(id='Type', ctx=ast.Load()),
+                        slice=ast.Name(id='JSONMixin', ctx=ast.Load()),
+                        ctx=ast.Load()
+                    )
+                ], ctx=ast.Load())
+            ),
             value=ast.Dict(
                 keys=[
                     ast.Constant(value=key)
@@ -112,7 +121,7 @@ def generate(path: str, schemas: Schemas):
                     for value in class_map.values()
                 ]
             ),
-            lineno=0,
+            simple=1,
         )
 
     def insert_encoder_and_decoder_to_class(builder: DataClassBuilder):
@@ -136,14 +145,14 @@ def generate(path: str, schemas: Schemas):
             )
             if layers_ann_assign is not None:
                 old_value = layers_ann_assign.value
-                new_value = old_value
-                if not isinstance(old_value, ast.Call):
-                    new_value = parse_function_call('field(metadata={"fastclasses_json": {}})')
-                    if old_value is not None:
-                        new_value.keywords.append(ast.keyword(
-                            arg='default',
-                            value=old_value
-                        ))
+                new_value = parse_function_call(
+                    'field(metadata={"fastclasses_json": {}})'
+                ) if not isinstance(old_value, ast.Call) else old_value
+                if not isinstance(old_value, ast.Call) and old_value is not None:
+                    new_value.keywords.append(ast.keyword(
+                        arg='default',
+                        value=old_value
+                    ))
                 fastclasses_dict_value = None
                 for keyword in new_value.keywords:
                     if keyword.arg == 'metadata' and isinstance(keyword.value, ast.Dict):
@@ -163,7 +172,7 @@ def generate(path: str, schemas: Schemas):
                 layers_ann_assign.value = new_value
 
         for identifier, (schema, cdef) in builder.class_dict.items():
-            if is_group_schema(schema):
+            if is_group_schema(schema) and isinstance(cdef, ast.ClassDef):
                 insert_encoder_and_decoder(
                     class_def=cdef,
                     field_name='layers',
@@ -172,6 +181,7 @@ def generate(path: str, schemas: Schemas):
                 )
 
     def before_class_def(builder: DataClassBuilder, root: ast.Module) -> None:
+        builder.check_typing_import('Type')
         to_object_func = parse_def_function('''def to_object(obj: Dict[str, Any]) -> Optional['AnyObject']:
     if (obj is not None) and ('_class' in obj.keys()) and (obj['_class'] in class_map.keys()):
         return class_map[obj['_class']].from_dict(obj)
@@ -188,7 +198,7 @@ def generate(path: str, schemas: Schemas):
         before_class_def,
         after_class_def
     )
-    print(ast.dump(module_ast, indent=4))
+    # print(ast.dump(module_ast, indent=4))
     with open(path, 'w') as f:
         f.write(ast.unparse(module_ast))
 

@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from functools import reduce
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from sketch_document_py.sketch_file_format import Contents, ContentsDocument, Meta, Page, User, Workspace, FileRef
@@ -19,7 +19,7 @@ class SketchFile:
     filepath: str
     contents: Contents
 
-    __do_objectID: str = None
+    __do_objectID: Optional[str] = None
 
     @property
     def do_objectID(self) -> str:

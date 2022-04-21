@@ -405,13 +405,26 @@ class DataClassBuilder:
                 bases=[ast.Name(id='Enum', ctx=ast.Load())],
                 keywords=[],
                 body=[
-                    ast.Assign(
-                        targets=[
-                            ast.Name(id=name, ctx=ast.Store())],
-                        value=ast.Constant(value=value),
-                        lineno=0,
-                    )
-                    for name, value in enum_pairs.items()
+                    *[
+                        ast.Assign(
+                            targets=[
+                                ast.Name(id=name, ctx=ast.Store())],
+                            value=ast.Constant(value=value),
+                            lineno=0,
+                        )
+                        for name, value in enum_pairs.items()
+                    ],
+                    *[
+                        ast.Assign(
+                            targets=[
+                                ast.Name(id='Undefined', ctx=ast.Store())],
+                            value=parse_function_call('object()'),
+                            lineno=0,
+                        ),
+                        parse_def_function(f'''@classmethod
+def _missing_(cls, value):
+    return {identifier}.Undefined''')
+                    ]
                 ],
                 decorator_list=[]
             )

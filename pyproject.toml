@@ -1,0 +1,64 @@
+[mypy]
+plugins = "fastclasses_json.mypy_plugin"
+
+[tool.poetry]
+name = "sketch-document-py"
+version = "1.0.0"
+description = "This project contains the APIs to work with Sketch documents and document elements in Python dataclass."
+authors = ["Borealin <shichuning@gmail.com>"]
+license = "MIT"
+packages = [
+    { include = "sketch_document_py" }
+]
+include = ["sketch_document_py/sketch_file_format/types.py"]
+exclude = ["sketch_document_py/sketch_file_format/scripts/*"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+fastclasses-json = "^0.5.0"
+
+[tool.poetry.dev-dependencies]
+pyhumps = "^3.5.3"
+pytest = "^7.1.1"
+requests = "^2.27.1"
+mypy = "^0.942"
+poethepoet = "^0.13.1"
+pytest-cov = "^3.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poe.tasks]
+[tool.poe.tasks.gen_types]
+help = "Generate types.py"
+script = "sketch_document_py.sketch_file_format.scripts.generate:generate_by_toml('6.2.0')"
+[tool.poe.tasks.clean]
+help = "Remove generated files"
+cmd = """
+        # multiline commands including comments work too!
+        rm -rf .coverage
+               .mypy_cache
+               .pytest_cache
+               ./**/__pycache__
+               dist
+               sketch_document_py/sketch_file_format/types.py
+      """
+[tool.poe.tasks.test]
+help = "Run unit and feature tests"
+cmd = "pytest --cov=sketch_document_py"
+[tool.poe.tasks.mypy]
+help = "Run the type checker"
+cmd = "mypy sketch_document_py tests"
+[tool.poe.tasks.poetry_install]
+help = "Install deps by poetry"
+cmd = "poetry install"
+[tool.poe.tasks.install]
+help = "Install deps and generate types"
+sequence = ["poetry_install", "gen_types"]
+[tool.poe.tasks.build]
+cmd = "poetry build"
+help = "Build the project"
+[tool.poe.tasks.publish]
+cmd = "poetry publish"
+help = "Publish the project"

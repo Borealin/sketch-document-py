@@ -1,5 +1,7 @@
 .idea
-*/**/.pytest_cache
-*/**/.mypy_cache
+.coverage
+.pytest_cache
+.mypy_cache
+./**/__pycache__
 dist
 sketch_document_py/sketch_file_format/types.py

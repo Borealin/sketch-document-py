@@ -203,7 +203,7 @@ def generate(path: str, schemas: Schemas):
         f.write(ast.unparse(module_ast))
 
 
-if __name__ == '__main__':
+def main():
     argv = sys.argv
     if len(argv) < 2:
         print('missing output file path')
@@ -211,3 +211,13 @@ if __name__ == '__main__':
     out_path = argv[1]
     version = argv[2] if len(argv) > 2 else 'latest'
     generate(out_path, get_schemas(version))
+
+
+def generate_by_toml(version='latest'):
+    from os.path import join, dirname, abspath
+    out_path = join(dirname(dirname(abspath(__file__))), 'types.py')
+    generate(out_path, get_schemas(version))
+
+
+if __name__ == '__main__':
+    main()

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-
+from pathlib import Path
 import json
 import os
 import shutil
@@ -11,7 +11,7 @@ from functools import reduce
 from typing import Dict, List
 from uuid import UUID
 
-from sketch_document_py.sketch_file_format import Contents, Document_, Meta, Page, User, Workspace, FileRef
+from sketch_document_py.sketch_file_format import Contents, ContentsDocument, Meta, Page, User, Workspace, FileRef
 
 
 @dataclass
@@ -50,8 +50,8 @@ def from_file(file_path: str) -> SketchFile:
         page_dict = json.loads(zip_file.read(f"{page['_ref']}.json"))
         pages.append(page_dict)
     document_dict['pages'] = pages
-    document: Document_ = Document_.from_dict(document_dict)
-    workspace: Workspace = {os.path.basename(file): json.loads(zip_file.read(file)) for file in
+    document: ContentsDocument = ContentsDocument.from_dict(document_dict)
+    workspace: Workspace = {str(Path(os.path.basename(file)).with_suffix('')): json.loads(zip_file.read(file)) for file in
                             filter(
                                 lambda x: x.startswith('workspace/') and x.endswith('.json'),
                                 zip_file.namelist())}
@@ -60,7 +60,7 @@ def from_file(file_path: str) -> SketchFile:
     return SketchFile(file_path, Contents(document, meta, user, workspace))
 
 
-def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool = True):
+def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool = False):
     """
     save changed SketchFile object to sketch file
     @param keep_static_file: should keep embedded static file
@@ -72,7 +72,8 @@ def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool
     if keep_static_file:
         temp_dir = tempfile.mkdtemp()
         backup_sketch_path = os.path.join(temp_dir, 'temp.sketch')
-        shutil.copy(obj.filepath, backup_sketch_path)
+        if os.path.exists(obj.filepath):
+            shutil.copy(obj.filepath, backup_sketch_path)
     file_path = obj.filepath if alter_file_path is None else alter_file_path
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -83,6 +84,7 @@ def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool
                 json.dumps(page.to_dict(), ensure_ascii=False).encode('utf-8')
             )
             refs.append(FileRef(
+                class_='MSJSONFileReference',
                 ref=f'pages/{page.do_objectID}',
                 ref_class='MSImmutablePage'
             ).to_dict())
@@ -112,7 +114,7 @@ def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool
 
 
 __all__ = [
-    'from_file', 'to_file'
+    'from_file', 'to_file', 'SketchFile'
 ]
 
 if __name__ == '__main__':

@@ -96,14 +96,14 @@ def test_nested_objects():
     }
     assert schema_to_ast_node(schema) == '''@dataclass_json
 @dataclass
-class Foo(JSONMixin):
+class TestTypeFoo(JSONMixin):
     bar: Optional[str] = None
     baz: Optional[float] = None
 
 @dataclass_json
 @dataclass
 class TestType(JSONMixin):
-    foo: Optional['Foo'] = None'''
+    foo: Optional['TestTypeFoo'] = None'''
 
 
 def test_required_object_properties():
@@ -228,4 +228,9 @@ def test_top_level_enum_definitions():
 class MyEnum(Enum):
     Zero = 0
     One = 1
-    Two = 2'''
+    Two = 2
+    Undefined = object()
+
+    @classmethod
+    def _missing_(cls, value):
+        return MyEnum.Undefined'''

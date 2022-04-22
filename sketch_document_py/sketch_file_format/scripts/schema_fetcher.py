@@ -81,8 +81,16 @@ class Schemas:
     user: Dict[str, Any]
 
 
+def check_version(package: Package, version: str) -> bool:
+    return version in package.dist_tags or version in package.versions
+
+
 def get_schemas(version: str) -> Schemas:
-    package = fetch_package_from_registry('@sketch-hq/sketch-file-format', 'https://registry.npmjs.org/')
+    package = fetch_package_from_registry(
+        '@sketch-hq/sketch-file-format', 'https://registry.npmjs.org/')
+    if not check_version(package, version):
+        raise ValueError(
+            f"{version} is not a valid version\nSelect from {sorted(set([*package.dist_tags.keys(),*package.versions.keys()]))}")
     with get_package_tarball(package, version) as tarball:
         def require(name):
             with open(path.join(tarball, 'dist', name)) as f:
@@ -93,7 +101,8 @@ def get_schemas(version: str) -> Schemas:
         meta_schema_json = require('./meta.schema.json')
         page_schema_json = require('./page.schema.json')
         user_schema_json = require('./user.schema.json')
-        versions = meta_schema_json.get('properties').get('version').get('enum')
+        versions = meta_schema_json.get(
+            'properties').get('version').get('enum')
         if versions is None:
             versions = ()
         return Schemas(
@@ -107,4 +116,4 @@ def get_schemas(version: str) -> Schemas:
         )
 
 
-__all__ = ['get_schemas', 'Schemas']
+__all__ = ['check_version', 'get_schemas', 'Schemas']

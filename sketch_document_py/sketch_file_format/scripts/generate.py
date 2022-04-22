@@ -204,20 +204,13 @@ def generate(path: str, schemas: Schemas):
 
 
 def main():
-    argv = sys.argv
-    if len(argv) < 2:
-        print('missing output file path')
-        sys.exit(1)
-    out_path = argv[1]
-    version = argv[2] if len(argv) > 2 else 'latest'
-    generate(out_path, get_schemas(version))
-
-
-def generate_by_toml(version='latest'):
+    import argparse
     from os.path import join, dirname, abspath
-    out_path = join(dirname(dirname(abspath(__file__))), 'types.py')
-    generate(out_path, get_schemas(version))
-
+    parser = argparse.ArgumentParser(description='Generate Sketch dataclass typing file.')
+    parser.add_argument('--out', type=str, help='Path to Sketch JSON schema file, default ../types.py', default=join(dirname(dirname(abspath(__file__))), 'types.py'))
+    parser.add_argument('--version', type=str, help='Sketch Schema version, follow @sketch-hq/sketch-file-format npm package version, default latest', default='latest')
+    args = parser.parse_args()
+    generate(args.out, get_schemas(args.version))
 
 if __name__ == '__main__':
     main()

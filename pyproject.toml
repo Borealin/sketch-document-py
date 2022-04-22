@@ -3,8 +3,10 @@ plugins = "fastclasses_json.mypy_plugin"
 
 [tool.poetry]
 name = "sketch-document-py"
-version = "1.0.0"
+version = "1.0.1"
 description = "This project contains the APIs to work with Sketch documents and document elements in Python dataclass."
+repository = "https://github.com/Borealin/sketch-document-py"
+readme = "README.md"
 authors = ["Borealin <shichuning@gmail.com>"]
 license = "MIT"
 packages = [
@@ -32,7 +34,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.poe.tasks]
 [tool.poe.tasks.gen_types]
 help = "Generate types.py"
-script = "sketch_document_py.sketch_file_format.scripts.generate:generate_by_toml('6.2.0')"
+script = "sketch_document_py.sketch_file_format.scripts.generate:main()"
 [tool.poe.tasks.clean]
 help = "Remove generated files"
 cmd = """

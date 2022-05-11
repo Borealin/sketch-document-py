@@ -1,4 +1,5 @@
 import ast
+import enum
 from typing import Any, Dict, Optional
 
 from .schema_fetcher import get_schemas, Schemas
@@ -127,24 +128,18 @@ def generate(path: str, schemas: Schemas):
     def insert_encoder_and_decoder_to_class(builder: DataClassBuilder):
         to_object_call = ast.Name(id='to_object', ctx=ast.Load())
         list_to_object_lambda = parse_lambda_function(
-            'lambda lst: [to_object(x) for x in lst if x is not None]'
+            'lambda lst: [to_object(x) for x in lst]'
         )
-
-        def insert_encoder_and_decoder(
-                class_def: ast.ClassDef,
-                field_name: str,
-                encoder: Optional[ast.expr] = None,
-                decoder: Optional[ast.expr] = None
-        ):
-            layers_ann_assign = next(
-                element
-                for element in class_def.body
-                if isinstance(element, ast.AnnAssign)
-                and isinstance(element.target, ast.Name)
-                and element.target.id == field_name
-            )
-            if layers_ann_assign is not None:
-                old_value = layers_ann_assign.value
+        for element in [
+            element
+            for identifier, (schema, cdef) in builder.class_dict.items()
+            if isinstance(cdef, ast.ClassDef)
+            for element in cdef.body
+            if isinstance(element, ast.AnnAssign)
+        ]:
+            union_type = check_ann_assign_contains_union(element)
+            if union_type is not UnionAnnAssignType.NOT_UNION:
+                old_value = element.value
                 new_value = parse_function_call(
                     'field(metadata={"fastclasses_json": {}})'
                 ) if not isinstance(old_value, ast.Call) else old_value
@@ -162,31 +157,23 @@ def generate(path: str, schemas: Schemas):
                                     and isinstance(value, ast.Dict):
                                 fastclasses_dict_value = value
                                 break
-                if fastclasses_dict_value is not None:
-                    if encoder is not None:
-                        fastclasses_dict_value.keys.append(ast.Constant(value='encoder'))
-                        fastclasses_dict_value.values.append(encoder)
-                    if decoder is not None:
-                        fastclasses_dict_value.keys.append(ast.Constant(value='decoder'))
-                        fastclasses_dict_value.values.append(decoder)
-                layers_ann_assign.value = new_value
 
-        for identifier, (schema, cdef) in builder.class_dict.items():
-            if is_group_schema(schema) and isinstance(cdef, ast.ClassDef):
-                insert_encoder_and_decoder(
-                    class_def=cdef,
-                    field_name='layers',
-                    encoder=None,
-                    decoder=list_to_object_lambda
-                )
+                if fastclasses_dict_value is not None:
+                    if union_type is UnionAnnAssignType.UNION or union_type is UnionAnnAssignType.OPTIONAL_UNION:
+                        fastclasses_dict_value.keys.append(ast.Constant(value='decoder'))
+                        fastclasses_dict_value.values.append(to_object_call)
+                    elif union_type is UnionAnnAssignType.LIST_UNION:
+                        fastclasses_dict_value.keys.append(ast.Constant(value='decoder'))
+                        fastclasses_dict_value.values.append(list_to_object_lambda)
+                element.value = new_value
 
     def before_class_def(builder: DataClassBuilder, root: ast.Module) -> None:
         builder.check_typing_import('Type')
-        to_object_func = parse_def_function('''def to_object(obj: Dict[str, Any]) -> Optional['AnyObject']:
-    if (obj is not None) and ('_class' in obj.keys()) and (obj['_class'] in class_map.keys()):
+        to_object_func = parse_def_function('''def to_object(obj: 'Any') -> Optional['Any']:
+    if obj is not None and isinstance(obj, dict) and '_class' in obj.keys() and (obj['_class'] in class_map.keys()):
         return class_map[obj['_class']].from_dict(obj)
     else:
-        return None''')
+        return obj''')
         root.body.append(to_object_func)
 
     def after_class_def(builder: DataClassBuilder, root: ast.Module) -> None:
@@ -203,14 +190,49 @@ def generate(path: str, schemas: Schemas):
         f.write(ast.unparse(module_ast))
 
 
+class UnionAnnAssignType(enum.Enum):
+    UNION = 1
+    LIST_UNION = 2
+    OPTIONAL_UNION = 3
+    NOT_UNION = 4
+
+
+def check_ann_assign_contains_union(ann_assign: ast.AnnAssign) -> UnionAnnAssignType:
+    """
+    Check if the annotation assign contains a Union annotation.
+    e.g. a: Union[int, str], b: List[Union[int, str]], c: Optional[Union[int, str]]
+    :param ann_assign: input ann_assign
+    """
+
+    def check_subscript(subscript: ast.Subscript) -> UnionAnnAssignType:
+        if isinstance(subscript.value, ast.Name):
+            if subscript.value.id == 'Union':
+                return UnionAnnAssignType.UNION
+            elif subscript.value.id == 'List' and isinstance(subscript.slice, ast.Subscript):
+                if check_subscript(subscript.slice) == UnionAnnAssignType.UNION:
+                    return UnionAnnAssignType.LIST_UNION
+            elif subscript.value.id == 'Optional' and isinstance(subscript.slice, ast.Subscript):
+                if check_subscript(subscript.slice) == UnionAnnAssignType.UNION:
+                    return UnionAnnAssignType.OPTIONAL_UNION
+        return UnionAnnAssignType.NOT_UNION
+
+    if isinstance(ann_assign.annotation, ast.Subscript):
+        return check_subscript(ann_assign.annotation)
+    return UnionAnnAssignType.NOT_UNION
+
+
 def main():
     import argparse
     from os.path import join, dirname, abspath
     parser = argparse.ArgumentParser(description='Generate Sketch dataclass typing file.')
-    parser.add_argument('--out', type=str, help='Path to Sketch JSON schema file, default ../types.py', default=join(dirname(dirname(abspath(__file__))), 'types.py'))
-    parser.add_argument('--version', type=str, help='Sketch Schema version, follow @sketch-hq/sketch-file-format npm package version, default latest', default='latest')
+    parser.add_argument('--out', type=str, help='Path to Sketch JSON schema file, default ../types.py',
+                        default=join(dirname(dirname(abspath(__file__))), 'types.py'))
+    parser.add_argument('--version', type=str,
+                        help='Sketch Schema version, follow @sketch-hq/sketch-file-format npm package version, default latest',
+                        default='latest')
     args = parser.parse_args()
     generate(args.out, get_schemas(args.version))
+
 
 if __name__ == '__main__':
     main()

@@ -419,15 +419,9 @@ class DataClassBuilder:
                         for name, value in enum_pairs.items()
                     ],
                     *[
-                        ast.Assign(
-                            targets=[
-                                ast.Name(id='Undefined', ctx=ast.Store())],
-                            value=parse_function_call('object()'),
-                            lineno=0,
-                        ),
                         parse_def_function(f'''@classmethod
 def _missing_(cls, value):
-    return {identifier}.Undefined''')
+    return {identifier}.{list(enum_pairs.keys())[0]}''')
                     ]
                 ],
                 decorator_list=[]

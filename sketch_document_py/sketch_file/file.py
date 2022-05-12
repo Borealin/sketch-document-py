@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from pathlib import Path
+
 import json
 import os
 import shutil
@@ -8,7 +8,8 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from functools import reduce
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Any
 from uuid import UUID
 
 from sketch_document_py.sketch_file_format import Contents, ContentsDocument, Meta, Page, User, Workspace, FileRef
@@ -51,7 +52,8 @@ def from_file(file_path: str) -> SketchFile:
         pages.append(page_dict)
     document_dict['pages'] = pages
     document: ContentsDocument = ContentsDocument.from_dict(document_dict)
-    workspace: Workspace = {str(Path(os.path.basename(file)).with_suffix('')): json.loads(zip_file.read(file)) for file in
+    workspace: Workspace = {str(Path(os.path.basename(file)).with_suffix('')): json.loads(zip_file.read(file)) for file
+                            in
                             filter(
                                 lambda x: x.startswith('workspace/') and x.endswith('.json'),
                                 zip_file.namelist())}
@@ -81,20 +83,20 @@ def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool
         for page in obj.contents.document.pages:
             zip_file.writestr(
                 os.path.join('pages', f'{page.do_objectID}.json'),
-                json.dumps(page.to_dict(), ensure_ascii=False).encode('utf-8')
+                json.dumps(remove_null_value(page.to_dict()), ensure_ascii=False).encode('utf-8')
             )
-            refs.append(FileRef(
+            refs.append(remove_null_value(FileRef(
                 class_='MSJSONFileReference',
                 ref=f'pages/{page.do_objectID}',
                 ref_class='MSImmutablePage'
-            ).to_dict())
+            ).to_dict()))
         if obj.contents.workspace is not None:
             for (key, value) in obj.contents.workspace.items():
                 zip_file.writestr(
                     os.path.join('workspace', f'{key}.json'),
                     json.dumps(value, ensure_ascii=False).encode('utf-8')
                 )
-        document_dict = obj.contents.document.to_dict()
+        document_dict = remove_null_value(obj.contents.document.to_dict())
         document_dict['pages'] = refs
         zip_file.writestr(
             'document.json',
@@ -103,7 +105,7 @@ def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool
         zip_file.writestr('user.json', json.dumps(
             obj.contents.user, ensure_ascii=False).encode('utf-8'))
         zip_file.writestr('meta.json', json.dumps(
-            obj.contents.meta.to_dict(), ensure_ascii=False).encode('utf-8'))
+            remove_null_value(obj.contents.meta.to_dict()), ensure_ascii=False).encode('utf-8'))
         if keep_static_file and backup_sketch_path is not None:
             with zipfile.ZipFile(backup_sketch_path, 'r') as backup_sketch:
                 for info in backup_sketch.infolist():
@@ -111,6 +113,19 @@ def to_file(obj: SketchFile, alter_file_path: str = None, keep_static_file: bool
                         zip_file.writestr(info, backup_sketch.read(info))
     if keep_static_file and temp_dir is not None:
         shutil.rmtree(temp_dir)
+
+
+def remove_null_value(obj: Any) -> Any:
+    """
+    remove null value from obj
+    @param obj: obj to remove null value
+    """
+    if isinstance(obj, dict):
+        return {k: remove_null_value(v) for k, v in obj.items() if v is not None}
+    elif isinstance(obj, list):
+        return [remove_null_value(v) for v in obj if v is not None]
+    else:
+        return obj
 
 
 __all__ = [

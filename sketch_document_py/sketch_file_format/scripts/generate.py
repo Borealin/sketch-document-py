@@ -130,6 +130,10 @@ def generate(path: str, schemas: Schemas):
         list_to_object_lambda = parse_lambda_function(
             'lambda lst: [to_object(x) for x in lst]'
         )
+        to_dict_call = ast.Name(id='to_dict', ctx=ast.Load())
+        list_to_dict_lambda = parse_lambda_function(
+            'lambda lst: [to_dict(x) for x in lst]'
+        )
         for element in [
             element
             for identifier, (schema, cdef) in builder.class_dict.items()
@@ -162,9 +166,13 @@ def generate(path: str, schemas: Schemas):
                     if union_type is UnionAnnAssignType.UNION or union_type is UnionAnnAssignType.OPTIONAL_UNION:
                         fastclasses_dict_value.keys.append(ast.Constant(value='decoder'))
                         fastclasses_dict_value.values.append(to_object_call)
+                        fastclasses_dict_value.keys.append(ast.Constant(value='encoder'))
+                        fastclasses_dict_value.values.append(to_dict_call)
                     elif union_type is UnionAnnAssignType.LIST_UNION:
                         fastclasses_dict_value.keys.append(ast.Constant(value='decoder'))
                         fastclasses_dict_value.values.append(list_to_object_lambda)
+                        fastclasses_dict_value.keys.append(ast.Constant(value='encoder'))
+                        fastclasses_dict_value.values.append(list_to_dict_lambda)
                 element.value = new_value
 
     def before_class_def(builder: DataClassBuilder, root: ast.Module) -> None:
@@ -175,6 +183,12 @@ def generate(path: str, schemas: Schemas):
     else:
         return obj''')
         root.body.append(to_object_func)
+        to_dict_func = parse_def_function('''def to_dict(obj: 'Any') -> Dict[str, 'Any']:
+    if isinstance(obj, JSONMixin):
+        return obj.to_dict()
+    else:
+        return obj''')
+        root.body.append(to_dict_func)
 
     def after_class_def(builder: DataClassBuilder, root: ast.Module) -> None:
         insert_encoder_and_decoder_to_class(builder)

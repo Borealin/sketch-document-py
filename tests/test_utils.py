@@ -210,8 +210,7 @@ class MyEnum(Enum):
     Zero = 0
     One = 1
     Two = 2
-    Undefined = object()
 
     @classmethod
     def _missing_(cls, value):
-        return MyEnum.Undefined'''
+        return MyEnum.Zero'''

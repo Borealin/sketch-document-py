@@ -3,7 +3,7 @@ plugins = "fastclasses_json.mypy_plugin"
 
 [tool.poetry]
 name = "sketch-document-py"
-version = "1.0.2"
+version = "1.0.3"
 description = "This project contains the APIs to work with Sketch documents and document elements in Python dataclass."
 repository = "https://github.com/Borealin/sketch-document-py"
 readme = "README.md"
